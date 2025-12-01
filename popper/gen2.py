@@ -67,61 +67,51 @@ class Generator:
                 encoding.append(f'vars({arity}, {tuple(xs)}).')
                 for i, x in enumerate(xs):
                     encoding.append(f'var_pos({x}, {tuple(xs)}, {i}).')
-                encoding.append(f'ordered_vars({tuple(xs)},{tuple(sorted(xs))}).')
+                if self.settings.symmetry_breaking:
+                    encoding.append(f'ordered_vars({tuple(xs)},{tuple(sorted(xs))}).')
 
+        if self.settings.symmetry_breaking:
+            # ORDERING THINGY
+            # %% appears((0,0,V0)):- body_literal(_, _, _, (V0,)), not head_var(_,V0).
+            # appears((0,V0,V1)):- body_literal(_, _, _, (A,B)), ordered_vars((A,B), (V0,V1)).
+            # appears((V0,V1,V2)):- body_literal(_, _, _, (A,B,C)), ordered_vars((A,B,C), (V0,V1,V2)).
+            order_cons = []
+            max_arity = max(arities)
+            for arity in range(2, max_arity+1):
+                xs1 = ','.join(f'V{i}' for i in range(arity))
+                xs2 = ','.join(f'X{i}' for i in range(arity))
 
+                if arity < max_arity:
+                    prefix = ','.join(str(0) for _ in range(arity, max_arity)) + ',' + xs1
+                else:
+                    prefix = xs1
 
-        # ORDERING THINGY
-        # %% appears((0,0,V0)):- body_literal(_, _, _, (V0,)), not head_var(_,V0).
-        # appears((0,V0,V1)):- body_literal(_, _, _, (A,B)), ordered_vars((A,B), (V0,V1)).
-        # appears((V0,V1,V2)):- body_literal(_, _, _, (A,B,C)), ordered_vars((A,B,C), (V0,V1,V2)).
-        order_cons = []
-        max_arity = max(arities)
-        for arity in range(2, max_arity+1):
-            xs1 = ','.join(f'V{i}' for i in range(arity)) # Vs
-            xs2 = ','.join(f'X{i}' for i in range(arity)) # Xs
+                order_cons.append(f'appears(({prefix})):- body_literal(_,_,_,({xs2})), ordered_vars(({xs2}), ({xs1})).')
+                order_cons.append(f'var_tuple(({prefix})):- body_pred(P,{arity}), vars({arity},Vars), not bad_body(P,Vars), not type_mismatch(P,Vars), ordered_vars(Vars,OrderedVars), OrderedVars=({xs1}).')
 
-            if arity < max_arity:
-                prefix = ','.join(str(0) for i in range(arity, max_arity)) + ',' + xs1
-            else:
-                prefix = xs1
+                if arity == 1:
+                    order_cons.append(f'var_member(V,(0,0,0,V)):-var(V).')
+                else:
+                    order_cons.append(f'var_member(V,({prefix})):-vars(_, Vars), Vars=({xs1}), var_member(V,Vars).')
 
+            xs1 = ','.join(f'V{i}' for i in range(max_arity))
+            for k in range(max_arity):
+                xs2 = ','.join(f'V{i}' for i in range(k))
+                if k > 0 and k < max_arity:
+                    xs2 += ','
+                xs2 += ','.join(f'X{i}' for i in range(k, max_arity))
+                order_cons.append(f'lower(({xs1}),({xs2})):- var_tuple(({xs1})), var_tuple(({xs2})), X{k} < V{k}.')
 
-            order_cons.append(f'appears(({prefix})):- body_literal(_,_,_,({xs2})), ordered_vars(({xs2}), ({xs1})).')
+            for k in range(max_arity-1):
+                v0 = f'V{k}'
+                v1 = f'V{k+1}'
+                order_cons.append(f'seen_lower(Vars1, V):- V={v1}-1, Vars1 = ({xs1}), {v0} < V < {v1}, lower(Vars1, Vars2), var_tuple(Vars1), appears(Vars2), var_member(V, Vars2), not head_var(_,V).')
+                order_cons.append(f'gap_(({xs1}),{v1}-1):- var_tuple(({xs1})), {v0} < V < {v1}, var(V).')
 
-            order_cons.append(f'var_tuple(({prefix})):- body_pred(P,{arity}), vars({arity},Vars), not bad_body(P,Vars), not type_mismatch(P,Vars), ordered_vars(Vars,OrderedVars), OrderedVars=({xs1}).')
+            order_cons.append(f'gap(({xs1}),V):- gap_(({xs1}), _), #max' + '{X :gap_((' + xs1 + '), X)} == V.')
+            order_cons.append(f':- appears(({xs1})), gap(({xs1}), V), not seen_lower(({xs1}),V), not head_var(_,V).')
 
-
-            if arity == 1:
-                order_cons.append(f'var_member(V,(0,0,0,V)):-var(V).')
-            else:
-                order_cons.append(f'var_member(V,({prefix})):-vars(_, Vars), Vars=({xs1}), var_member(V,Vars).')
-            # print(f)
-            # var_member(V,(0,0,V0,V1)):-vars(_, Vars), Vars=(V0,V1), var_member(V,Vars).
-            # var_member(V,(0,V0,V1,V2)):-vars(_, Vars), Vars=(V0,V1,V2), var_member(V,Vars).
-
-        xs1 = ','.join(f'V{i}' for i in range(max_arity)) # Vs
-        for k in range(max_arity):
-            xs2 = ','.join(f'V{i}' for i in range(k)) # Vs
-            if k > 0 and k < max_arity:
-                xs2 += ','
-            xs2 += ','.join(f'X{i}' for i in range(k, max_arity))
-            order_cons.append(f'lower(({xs1}),({xs2})):- var_tuple(({xs1})), var_tuple(({xs2})), X{k} < V{k}.')
-
-        for k in range(max_arity-1):
-            # A,B,C,D
-            v0 = f'V{k}'
-            v1 = f'V{k+1}'
-            order_cons.append(f'seen_lower(Vars1, V):- V={v1}-1, Vars1 = ({xs1}), {v0} < V < {v1}, lower(Vars1, Vars2), var_tuple(Vars1), appears(Vars2), var_member(V, Vars2), not head_var(_,V).')
-            order_cons.append(f'gap_(({xs1}),{v1}-1):- var_tuple(({xs1})), {v0} < V < {v1}, var(V).')
-
-
-        order_cons.append(f'gap(({xs1}),V):- gap_(({xs1}), _), #max' + '{X :gap_((' + xs1 + '), X)} == V.')
-
-        order_cons.append(f':- appears(({xs1})), gap(({xs1}), V), not seen_lower(({xs1}),V), not head_var(_,V).')
-
-        # print('\n'.join(order_cons))
-        encoding.extend(order_cons)
+            encoding.extend(order_cons)
 
 
         type_encoding = set()
@@ -207,6 +197,9 @@ class Generator:
         for xs in tmp_new_cons:
             con_type = xs[0]
             con_prog = xs[1]
+
+            if not self.settings.is_constraint_enabled(con_type):
+                continue
 
             if con_type == Constraint.GENERALISATION or con_type == Constraint.BANISH:
                 con_size = None

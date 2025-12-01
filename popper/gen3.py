@@ -299,6 +299,8 @@ class Generator:
         for xs in tmp_new_cons:
             con_type = xs[0]
             con_prog = xs[1]
+            if not self.settings.is_constraint_enabled(con_type):
+                continue
 
             if con_type == Constraint.GENERALISATION:
                 con_size = None

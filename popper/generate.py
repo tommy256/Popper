@@ -543,6 +543,9 @@ class Generator:
             # con_prog_ordering = xs[2]
             # print(con_type)
 
+            if not self.settings.is_constraint_enabled(con_type):
+                continue
+
             # if con_type not in (1, 2):
                 # print(con_type)
             # con_prog, con_prog_ordering

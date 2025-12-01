@@ -74,6 +74,20 @@ class Popper():
         self.tmp = {}
         self.seen_allsat = set()
 
+    def _add_constraint(self, accumulator, constraint):
+        if self.settings.is_constraint_enabled(constraint[0]):
+            accumulator.append(constraint)
+            return True
+        return False
+
+    def _extend_constraints(self, accumulator, constraints):
+        added = False
+        for constraint in constraints:
+            if self.settings.is_constraint_enabled(constraint[0]):
+                accumulator.append(constraint)
+                added = True
+        return added
+
     def run(self, bkcons):
 
         settings, tester = self.settings, self.tester
@@ -228,7 +242,7 @@ class Popper():
                         settings.best_mdl = mdl
                         settings.max_literals = mdl-1
                         settings.print_incomplete_solution2(prog, tp, fn, tn, fp, prog_size)
-                        new_cons.extend(self.build_constraints_previous_hypotheses(mdl, prog_size))
+                        self._extend_constraints(new_cons, self.build_constraints_previous_hypotheses(mdl, prog_size))
 
                 # if it does not cover any example, prune specialisations
                 if tp == 0:
@@ -252,8 +266,8 @@ class Popper():
                     if tp < min_coverage or (settings.noisy and tp <= prog_size):
                         with settings.stats.duration('find mucs'):
                             cons_ = tuple(self.explain_incomplete(prog))
-                            new_cons.extend(cons_)
-                            pruned_more_general = len(cons_) > 0
+                            if self._extend_constraints(new_cons, cons_):
+                                pruned_more_general = True
 
                 if tp > 0 and success_sets and (not settings.noisy or (settings.noisy and fp==0)):
                     with settings.stats.duration('check subsumed and covers_too_few'):
@@ -284,21 +298,26 @@ class Popper():
                     subsumed_progs = []
                     with settings.stats.duration('find most general subsumed/covers_too_few'):
                         subsumed_progs = self.subsumed_or_covers_too_few(prog, seen=set())
-                    pruned_more_general = len(subsumed_progs) > 0
+                    has_subsumed = len(subsumed_progs) > 0
 
-                    if settings.showcons and not pruned_more_general:
+                    if settings.showcons and not has_subsumed:
                         if subsumed:
                             print('\t', 'SUBSUMED:', '\t', format_prog(prog))
                         elif subsumed_by_two:
                             print('\t', 'SUBSUMED BY TWO:', '\t', format_prog(prog))
                         elif covers_too_few:
                             print('\t', 'COVERS TOO FEW:', '\t', format_prog(prog))
+                    added_subsumed = False
                     for subsumed_prog, message in subsumed_progs:
                         if settings.showcons:
                             print('\t', message, '\t', format_prog(prog))
 
                         subsumed_prog_ = frozenset(remap_variables(rule) for rule in subsumed_prog)
-                        new_cons.append((Constraint.SPECIALISATION, subsumed_prog_))
+                        if self._add_constraint(new_cons, (Constraint.SPECIALISATION, subsumed_prog_)):
+                            added_subsumed = True
+
+                    if added_subsumed:
+                        pruned_more_general = True
 
                 if not settings.noisy and not pruned_more_general:
                     if inconsistent:
@@ -307,8 +326,8 @@ class Popper():
                         if is_recursive:
                             combiner.add_inconsistent(prog)
                             cons_ = frozenset(self.explain_inconsistent(prog))
-                            new_cons.extend(cons_)
-                            pruned_sub_inconsistent = len(cons_) > 0
+                            if self._extend_constraints(new_cons, cons_):
+                                pruned_sub_inconsistent = True
                     else:
                         # messy thing so the combiner can look at something
                         neg_covered = frozenset()
@@ -325,7 +344,7 @@ class Popper():
                             # check whether any subprograms are non-functional
                             with settings.stats.duration('explain_none_functional'):
                                 cons_ = explain_none_functional(settings, tester, prog)
-                                new_cons.extend(cons_)
+                                self._extend_constraints(new_cons, cons_)
 
                 if settings.noisy:
                     # if a program of size k covers less than k positive examples, we can prune its specialisations
@@ -366,13 +385,13 @@ class Popper():
                             continue
                         if tester.has_redundant_literal(frozenset([rule])):
                             add_gen = True
-                            new_cons.append((Constraint.GENERALISATION, [rule]))
+                            self._add_constraint(new_cons, (Constraint.GENERALISATION, [rule]))
                             if settings.showcons:
                                 print('\t', format_rule(rule), '\t', 'has_redundant_literal')
 
                 # remove a subset of theta-subsumed rules when learning recursive programs with more than two rules
                 if settings.max_rules > 2 and is_recursive:
-                    new_cons.append((Constraint.TMP_ANDY, prog))
+                    self._add_constraint(new_cons, (Constraint.TMP_ANDY, prog))
 
                 # remove generalisations of programs with redundant rules
                 # if is_recursive and len(prog) > 2 and tester.has_redundant_rule(prog):
@@ -393,7 +412,7 @@ class Popper():
                         for x in xs:
                             if settings.showcons:
                                 print('\t', 'REDUCIBLE_1:', '\t', ','.join(format_literal(literal) for literal in x))
-                            new_cons.append((Constraint.UNSAT, x))
+                            self._add_constraint(new_cons, (Constraint.UNSAT, x))
 
                 # CHECK WHETHER THE PROGRAM DOES NOT DISCRIMINATE AGAINST NEGATIVE EXAMPLES
                 # this paper outlines the idea: # https://arxiv.org/pdf/2502.01232
@@ -405,7 +424,7 @@ class Popper():
                             pruned_more_general = True
                             if settings.showcons:
                                 print('\t', 'REDUCIBLE_2:', '\t', format_prog(bad_prog))
-                            new_cons.append((Constraint.SPECIALISATION, bad_prog))
+                            self._add_constraint(new_cons, (Constraint.SPECIALISATION, bad_prog))
 
                 # must cover minimum number of examples
                 if not add_spec and not pruned_more_general:
@@ -641,7 +660,7 @@ class Popper():
                         if settings.noisy and best_score < settings.best_mdl:
                             settings.best_mdl = best_score
                             settings.max_literals = settings.best_mdl - 1
-                            new_cons.extend(self.build_constraints_previous_hypotheses(settings.best_mdl, prog_size))
+                            self._extend_constraints(new_cons, self.build_constraints_previous_hypotheses(settings.best_mdl, prog_size))
                             if settings.single_solve:
                                 # AC: sometimes adding these size constraints can take longer
                                 for i in range(best_score, max_size+1):
@@ -667,35 +686,35 @@ class Popper():
 
                 # BUILD CONSTRAINTS
                 if add_spec and not pruned_more_general and not add_redund2:
-                    new_cons.append((Constraint.SPECIALISATION, prog))
+                    self._add_constraint(new_cons, (Constraint.SPECIALISATION, prog))
 
                 if not skipped:
                     if settings.noisy and not add_spec and spec_size and not pruned_more_general:
                         if spec_size <= settings.max_literals and ((is_recursive or has_invention or spec_size <= settings.max_body)):
-                            new_cons.append((Constraint.SPECIALISATION, prog, spec_size))
-                            self.seen_hyp_spec[fp+prog_size+mdl].append([prog, tp, fn, tn, fp, prog_size])
+                            if self._add_constraint(new_cons, (Constraint.SPECIALISATION, prog, spec_size)):
+                                self.seen_hyp_spec[fp+prog_size+mdl].append([prog, tp, fn, tn, fp, prog_size])
 
                 if add_gen and not pruned_sub_inconsistent:
                     if settings.noisy or settings.recursion_enabled or settings.pi_enabled:
                         if not pruned_more_general:
-                            new_cons.append((Constraint.GENERALISATION, prog))
+                            self._add_constraint(new_cons, (Constraint.GENERALISATION, prog))
                     else:
                         if not add_spec:
-                            new_cons.append((Constraint.GENERALISATION, prog))
+                            self._add_constraint(new_cons, (Constraint.GENERALISATION, prog))
 
                 if settings.noisy and not add_gen and gen_size and not pruned_sub_inconsistent:
                     if gen_size <= settings.max_literals and (settings.recursion_enabled or settings.pi_enabled) and not pruned_more_general:
-                        new_cons.append((Constraint.GENERALISATION, prog, gen_size))
-                        self.seen_hyp_gen[fn+prog_size+mdl].append([prog, tp, fn, tn, fp, prog_size])
+                        if self._add_constraint(new_cons, (Constraint.GENERALISATION, prog, gen_size)):
+                            self.seen_hyp_gen[fn+prog_size+mdl].append([prog, tp, fn, tn, fp, prog_size])
 
                 if add_redund1 and not pruned_more_general:
-                    new_cons.append((Constraint.REDUNDANCY_CONSTRAINT1, prog))
+                    self._add_constraint(new_cons, (Constraint.REDUNDANCY_CONSTRAINT1, prog))
 
                 if add_redund2 and not pruned_more_general:
-                    new_cons.append((Constraint.REDUNDANCY_CONSTRAINT2, prog))
+                    self._add_constraint(new_cons, (Constraint.REDUNDANCY_CONSTRAINT2, prog))
 
                 if settings.noisy and not add_spec and not add_gen:
-                    new_cons.append((Constraint.BANISH, prog))
+                    self._add_constraint(new_cons, (Constraint.BANISH, prog))
 
                 # CONSTRAIN
                 with settings.stats.duration('constrain'):
@@ -1064,6 +1083,8 @@ class Popper():
         # print(format_prog(prog))
 
         settings, tester = self.settings, self.tester
+        if not any(settings.is_constraint_enabled(ct) for ct in (Constraint.UNSAT, Constraint.SPECIALISATION, Constraint.REDUNDANCY_CONSTRAINT1, Constraint.REDUNDANCY_CONSTRAINT2)):
+            return
         unsat_cores = self.explain_totally_incomplete(prog)
 
         for subprog, unsat_body in unsat_cores:
@@ -1091,6 +1112,8 @@ class Popper():
 
     # given a program with more than one rule, look for inconsistent subrules/subprograms
     def explain_inconsistent(self, prog):
+        if not self.settings.is_constraint_enabled(Constraint.GENERALISATION):
+            return
         base = []
         rec = []
 
@@ -1118,40 +1141,41 @@ class Popper():
                     yield (Constraint.GENERALISATION, subprog)
 
     def build_constraints_previous_hypotheses(self, score, best_size):
+        if not (self.settings.is_constraint_enabled(Constraint.SPECIALISATION) or self.settings.is_constraint_enabled(Constraint.GENERALISATION)):
+            return []
+
         generator, num_pos, num_neg = self.generator, self.num_pos, self.num_neg,
         seen_hyp_spec, seen_hyp_gen = self.seen_hyp_spec, self.seen_hyp_gen
         cons = []
-        # print(f"new best score {score}")
-        for k in [k for k in seen_hyp_spec if k > score+num_pos+best_size]:
-            to_delete = []
-            for prog, tp, fn, tn, fp, size in seen_hyp_spec[k]:
-                # mdl = mdl_score(tuple((tp, fn, tn, fp, size)))
-                mdl = mdl_score(fn, fp, size)
-                if score+num_pos+best_size < fp+size+mdl:
-                    spec_size = score-mdl+num_pos+best_size
-                    if spec_size <= size:
-                        to_delete.append([prog, tp, fn, tn, fp, size])
-                    # _, con = generator.build_specialisation_constraint(prog, rule_ordering, spec_size=spec_size)
-                    # cons.add(con)
-                    cons.append((Constraint.SPECIALISATION, prog, spec_size))
-                    # print('SPEC', format_prog(prog))
-            for to_del in to_delete:
-                seen_hyp_spec[k].remove(to_del)
-        for k in [k for k in seen_hyp_gen if k > score + num_neg + best_size]:
-            to_delete = []
-            for prog, tp, fn, tn, fp, size in seen_hyp_gen[k]:
-                # mdl = mdl_score(tuple((tp, fn, tn, fp, size)))
-                mdl = mdl_score(fn, fp, size)
-                if score + num_neg + best_size < fn + size + mdl:
-                    gen_size = score - mdl + num_neg + best_size
-                    if gen_size <= size:
-                        to_delete.append([prog, tp, fn, tn, fp, size])
-                    # _, con = generator.build_generalisation_constraint(prog, rule_ordering, gen_size=gen_size)
-                    # cons.add(con)
-                    cons.append((Constraint.GENERALISATION, prog, gen_size))
-                    # print('GEN', format_prog(prog))
-            for to_del in to_delete:
-                seen_hyp_gen[k].remove(to_del)
+        enable_spec = self.settings.is_constraint_enabled(Constraint.SPECIALISATION)
+        enable_gen = self.settings.is_constraint_enabled(Constraint.GENERALISATION)
+
+        if enable_spec:
+            for k in [k for k in seen_hyp_spec if k > score+num_pos+best_size]:
+                to_delete = []
+                for prog, tp, fn, tn, fp, size in seen_hyp_spec[k]:
+                    mdl = mdl_score(fn, fp, size)
+                    if score+num_pos+best_size < fp+size+mdl:
+                        spec_size = score-mdl+num_pos+best_size
+                        if spec_size <= size:
+                            to_delete.append([prog, tp, fn, tn, fp, size])
+                        cons.append((Constraint.SPECIALISATION, prog, spec_size))
+                for to_del in to_delete:
+                    seen_hyp_spec[k].remove(to_del)
+
+        if enable_gen:
+            for k in [k for k in seen_hyp_gen if k > score + num_neg + best_size]:
+                to_delete = []
+                for prog, tp, fn, tn, fp, size in seen_hyp_gen[k]:
+                    mdl = mdl_score(fn, fp, size)
+                    if score + num_neg + best_size < fn + size + mdl:
+                        gen_size = score - mdl + num_neg + best_size
+                        if gen_size <= size:
+                            to_delete.append([prog, tp, fn, tn, fp, size])
+                        cons.append((Constraint.GENERALISATION, prog, gen_size))
+                for to_del in to_delete:
+                    seen_hyp_gen[k].remove(to_del)
+
         return cons
 
     def subsumed_or_covers_too_few(self, prog, seen=set()):
@@ -1658,6 +1682,9 @@ def tmp(prog):
 
 def explain_none_functional(settings, tester, prog):
     new_cons = []
+
+    if not settings.is_constraint_enabled(Constraint.GENERALISATION):
+        return new_cons
 
     if len(prog) == 1:
         return new_cons
