@@ -18,6 +18,8 @@
 :- use_module(tester).
 :- use_module(core).
 
+:- dynamic seen_program/1.
+
 %% popper(+KbDir, -Program)
 %  Convenience predicate with default options.
 popper(KbDir, Program) :-
@@ -34,6 +36,7 @@ popper(KbDir, Options, Program) :-
 popper(KbDir, Options, Program, Outcome) :-
     option(max_literals(MaxLits), Options, 3),
     tester:tester_initialise(KbDir, Options),
+    reset_seen_programs,
     option(max_models(MaxModels), Options, 0),
     option(clingo_timeout(ClingoTimeout), Options, 0),
     between(1, MaxLits, LiteralCount),
@@ -42,6 +45,7 @@ popper(KbDir, Options, Program, Outcome) :-
     member(ModelAtoms, Models),
     generate:unordered_program_from_model(ModelAtoms, Unordered),
     safe_order(Unordered, Ordered),
+    maybe_register_program(Ordered, Options),
     tester:tester_evaluate(Ordered, Outcome),
     Program = Ordered.
 
@@ -70,6 +74,24 @@ maybe_limit_models(Max, Models, Limited) :-
     length(Limited, Max),
     append(Limited, _, Models), !.
 maybe_limit_models(_, Models, Models).
+
+reset_seen_programs :-
+    retractall(seen_program(_)).
+
+maybe_register_program(Program, Options) :-
+    option(skip_duplicates(Skip), Options, true),
+    (   Skip == true
+    ->  program_signature(Program, Signature),
+        (   seen_program(Signature)
+        ->  fail
+        ;   assertz(seen_program(Signature))
+        )
+    ;   true
+    ).
+
+program_signature(Program, Signature) :-
+    program_clauses(Program, Clauses),
+    sort(Clauses, Signature).
 
 safe_order(Unordered, Ordered) :-
     catch(order:unordered_to_ordered(Unordered, Ordered), Error, handle_order_error(Error)).
