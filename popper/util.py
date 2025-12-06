@@ -42,6 +42,14 @@ class Constraint:
     BANISH = 7
 
 
+class BkConsConstraint:
+    RECALL = 1
+    NON_SINGLETON = 2
+    TYPE = 3
+    BINARY = 4
+    TERNARY = 5
+
+
 CONSTRAINT_ID_TO_NAME = {
     Constraint.GENERALISATION: 'generalisation',
     Constraint.SPECIALISATION: 'specialisation',
@@ -68,14 +76,38 @@ CONSTRAINT_NAME_TO_ID = {
     'banish': Constraint.BANISH,
 }
 
+BKCONS_ID_TO_NAME = {
+    BkConsConstraint.RECALL: 'recall',
+    BkConsConstraint.NON_SINGLETON: 'non_singleton',
+    BkConsConstraint.TYPE: 'type',
+    BkConsConstraint.BINARY: 'binary',
+    BkConsConstraint.TERNARY: 'ternary',
+}
+
+BKCONS_NAME_TO_ID = {
+    'recall': BkConsConstraint.RECALL,
+    'non_singleton': BkConsConstraint.NON_SINGLETON,
+    'nonsingleton': BkConsConstraint.NON_SINGLETON,
+    'type': BkConsConstraint.TYPE,
+    'binary': BkConsConstraint.BINARY,
+    'pair': BkConsConstraint.BINARY,
+    'pairwise': BkConsConstraint.BINARY,
+    'ternary': BkConsConstraint.TERNARY,
+    'triple': BkConsConstraint.TERNARY,
+}
+
 
 def constraint_type_to_name(constraint_type):
     return CONSTRAINT_ID_TO_NAME.get(constraint_type, f'unknown_{constraint_type}')
 
 
-def normalize_constraint_selection(selection):
+def bkcons_type_to_name(constraint_type):
+    return BKCONS_ID_TO_NAME.get(constraint_type, f'unknown_bkcons_{constraint_type}')
+
+
+def _normalize_named_selection(selection, id_to_name, name_to_id, *, entity_name):
     if selection is None:
-        return set(CONSTRAINT_ID_TO_NAME.keys())
+        return set(id_to_name.keys())
 
     if isinstance(selection, (set, frozenset)) and all(isinstance(x, int) for x in selection):
         return set(selection)
@@ -96,30 +128,38 @@ def normalize_constraint_selection(selection):
             ids.add(token)
             continue
         if not isinstance(token, str):
-            raise ValueError('Constraint selection must contain names or ids')
+            raise ValueError(f'{entity_name} selection must contain names or ids')
         for part in token.split(','):
             name = part.strip().lower()
             if name:
                 names.append(name)
 
     if any(name == 'all' for name in names):
-        return set(CONSTRAINT_ID_TO_NAME.keys())
+        return set(id_to_name.keys())
 
     if any(name == 'none' for name in names):
         if len(names) > 1 or ids:
-            raise ValueError('Cannot combine "none" with other constraint names')
+            raise ValueError('Cannot combine "none" with other names')
         return set()
 
     for name in names:
         try:
-            ids.add(CONSTRAINT_NAME_TO_ID[name])
+            ids.add(name_to_id[name])
         except KeyError as exc:
-            raise ValueError(f'Unknown constraint "{name}"') from exc
+            raise ValueError(f'Unknown {entity_name} "{name}"') from exc
 
     if not ids:
-        return set(CONSTRAINT_ID_TO_NAME.keys())
+        return set(id_to_name.keys())
 
     return ids
+
+
+def normalize_constraint_selection(selection):
+    return _normalize_named_selection(selection, CONSTRAINT_ID_TO_NAME, CONSTRAINT_NAME_TO_ID, entity_name='constraint')
+
+
+def normalize_bkcons_selection(selection):
+    return _normalize_named_selection(selection, BKCONS_ID_TO_NAME, BKCONS_NAME_TO_ID, entity_name='bkcons constraint')
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Popper is an ILP system based on learning from failures')
@@ -144,6 +184,7 @@ def parse_args():
     parser.add_argument('--functional-test', default=False, action='store_true', help='Run functional test')
     parser.add_argument('--disable-symmetry-breaking', default=False, action='store_true', help='Disable symmetry-breaking ordering constraints in the hypothesis generator')
     parser.add_argument('--constraints', nargs='+', default=None, help='Constraint strategies to enable (default: all). Use "none" to disable every constraint. Available: generalisation, specialisation, unsat, redundancy1, redundancy2, tmp_andy, banish')
+    parser.add_argument('--bkcons', nargs='+', default=None, help='Background constraint families to enable (default: all). Use "none" to disable every background constraint. Available: recall, non_singleton, type, binary, ternary')
     # parser.add_argument('--datalog', default=False, action='store_true', help='EXPERIMENTAL FEATURE: use recall to order literals in rules')
     # parser.add_argument('--no-bias', default=False, action='store_true', help='EXPERIMENTAL FEATURE: do not use language bias')
     # parser.add_argument('--order-space', default=False, action='store_true', help='EXPERIMENTAL FEATURE: search space ordered by size')
@@ -152,6 +193,7 @@ def parse_args():
 
     try:
         args.constraints = normalize_constraint_selection(args.constraints)
+        args.bkcons = normalize_bkcons_selection(args.bkcons)
     except ValueError as exc:
         parser.error(str(exc))
 
@@ -311,7 +353,7 @@ def flatten(xs):
     return [item for sublist in xs for item in sublist]
 
 class Settings:
-    def __init__(self, cmd_line=False, info=True, debug=False, show_stats=True, max_literals=MAX_LITERALS, timeout=TIMEOUT, quiet=False, eval_timeout=EVAL_TIMEOUT, max_examples=MAX_EXAMPLES, max_body=None, max_rules=None, max_vars=None, functional_test=False, kbpath=False, ex_file=False, bk_file=False, bias_file=False, showcons=False, no_bias=False, order_space=False, noisy=False, batch_size=BATCH_SIZE, solver='rc2', anytime_solver=None, anytime_timeout=ANYTIME_TIMEOUT, enabled_constraints=None, symmetry_breaking=True):
+    def __init__(self, cmd_line=False, info=True, debug=False, show_stats=True, max_literals=MAX_LITERALS, timeout=TIMEOUT, quiet=False, eval_timeout=EVAL_TIMEOUT, max_examples=MAX_EXAMPLES, max_body=None, max_rules=None, max_vars=None, functional_test=False, kbpath=False, ex_file=False, bk_file=False, bias_file=False, showcons=False, no_bias=False, order_space=False, noisy=False, batch_size=BATCH_SIZE, solver='rc2', anytime_solver=None, anytime_timeout=ANYTIME_TIMEOUT, enabled_constraints=None, enabled_bkcons=None, symmetry_breaking=True):
 
         if cmd_line:
             args = parse_args()
@@ -339,6 +381,7 @@ class Settings:
             anytime_solver = args.anytime_solver
             anytime_timeout = args.anytime_timeout
             constraint_selection = args.constraints
+            bkcons_selection = args.bkcons
             symmetry_breaking = not args.disable_symmetry_breaking
         else:
             if kbpath:
@@ -348,6 +391,7 @@ class Settings:
                 self.bk_file = bk_file
                 self.bias_file = bias_file
             constraint_selection = enabled_constraints
+            bkcons_selection = enabled_bkcons
             # symmetry_breaking parameter already holds desired value
 
         # self.tmp_cache = set()
@@ -414,6 +458,17 @@ class Settings:
         if self.logger.isEnabledFor(logging.DEBUG):
             names_str = ', '.join(self.enabled_constraint_names) if self.enabled_constraint_names else 'none'
             self.logger.debug(f'Enabled constraints: {names_str}')
+
+        try:
+            self.enabled_bkcons = normalize_bkcons_selection(bkcons_selection)
+        except ValueError as exc:
+            raise ValueError(f'Invalid bkcons selection: {exc}') from exc
+
+        self.enabled_bkcons_names = tuple(sorted(bkcons_type_to_name(c) for c in self.enabled_bkcons))
+
+        if self.logger.isEnabledFor(logging.DEBUG):
+            names_str = ', '.join(self.enabled_bkcons_names) if self.enabled_bkcons_names else 'none'
+            self.logger.debug(f'Enabled bkcons: {names_str}')
 
         self.symmetry_breaking = symmetry_breaking
         if self.logger.isEnabledFor(logging.DEBUG):
@@ -607,6 +662,9 @@ class Settings:
 
     def is_constraint_enabled(self, constraint_type):
         return constraint_type in self.enabled_constraints
+
+    def is_bkcons_enabled(self, constraint_type):
+        return constraint_type in self.enabled_bkcons
 
     def print_prog_score(self, prog, score):
         tp, fn, tn, fp, size = score

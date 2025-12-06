@@ -627,7 +627,9 @@ def atom_to_symbol(pred, args):
     xs = tuple(arg_to_symbol(arg) for arg in args)
     return Function(name = pred, arguments = xs)
 
-def deduce_bk_cons(settings, tester):
+def deduce_bk_cons(settings, tester, *, include_binary=True, include_ternary=True):
+    if not (include_binary or include_ternary):
+        return []
     import re
     prog = []
     lookup2 = {k: f'({v})' for k,v in tmp_map.items()}
@@ -685,11 +687,20 @@ def deduce_bk_cons(settings, tester):
     # cons = pkg_resources.resource_string(__name__, "lp/cons.pl").decode()
     bk = bk.replace('\\+','not')
 
-    new_props1, new_cons1 = build_props(settings, arities, tester)
-    new_props2, new_cons2 = build_props2(settings, arities)
+    new_props1, new_cons1 = ([], [])
+    if include_binary or include_ternary:
+        new_props1, new_cons1 = build_props(settings, arities, tester)
+
+    new_props2, new_cons2 = ([], [])
+    if include_ternary:
+        new_props2, new_cons2 = build_props2(settings, arities)
 
     new_props = new_props1 + new_props2
-    new_cons = new_cons1 + new_cons2
+    new_cons = []
+    if include_binary:
+        new_cons.extend(new_cons1)
+    if include_ternary:
+        new_cons.extend(new_cons2)
 
     # print('\n'.join(new_cons))
 

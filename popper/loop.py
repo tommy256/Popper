@@ -1,9 +1,10 @@
 import time
+import logging
 from collections import defaultdict
 from bitarray.util import subset, any_and, ones
 from functools import cache
 from itertools import chain, combinations, permutations
-from . util import timeout, format_rule, rule_is_recursive, prog_is_recursive, prog_has_invention, calc_prog_size, format_literal, Constraint, mdl_score, suppress_stdout_stderr, get_raw_prog, Literal, remap_variables, format_prog
+from . util import timeout, format_rule, rule_is_recursive, prog_is_recursive, prog_has_invention, calc_prog_size, format_literal, Constraint, BkConsConstraint, mdl_score, suppress_stdout_stderr, get_raw_prog, Literal, remap_variables, format_prog
 from . tester import Tester
 from . bkcons import deduce_bk_cons, deduce_recalls, deduce_type_cons, deduce_non_singletons
 from . combine import Combiner
@@ -1571,59 +1572,80 @@ def get_bk_cons(settings, tester):
             print('remove pointless relation', p, a)
         settings.body_preds.remove((p,a))
 
-    # if settings.datalog:
-    settings.logger.debug(f'Loading recalls')
-    with settings.stats.duration('recalls'):
-        recalls = deduce_recalls(settings)
+    recall_enabled = settings.is_bkcons_enabled(BkConsConstraint.RECALL)
+    datalog_families = (
+        BkConsConstraint.NON_SINGLETON,
+        BkConsConstraint.TYPE,
+        BkConsConstraint.BINARY,
+        BkConsConstraint.TERNARY,
+    )
+    datalog_requested = any(settings.is_bkcons_enabled(x) for x in datalog_families)
 
-    if recalls == None:
-        settings.datalog = False
-    else:
-        settings.datalog = True
-        if settings.showcons:
-            for x in recalls:
-                print('recall', x)
-        bkcons.extend(recalls)
+    settings.datalog = False
+    recall_success = False
+
+    if recall_enabled:
+        settings.logger.debug('Loading recalls')
+        with settings.stats.duration('recalls'):
+            recalls = deduce_recalls(settings)
+
+        if recalls is None:
+            settings.logger.debug('Loading recalls FAILURE')
+        else:
+            recall_success = True
+            settings.datalog = True
+            if settings.showcons:
+                for x in recalls:
+                    print('recall', x)
+            bkcons.extend(recalls)
+    elif datalog_requested and settings.logger.isEnabledFor(logging.DEBUG):
+        settings.logger.debug('Recalls disabled by selection; skipping recall constraints')
 
     if settings.datalog:
+        if settings.is_bkcons_enabled(BkConsConstraint.NON_SINGLETON):
+            xs = deduce_non_singletons(settings)
+            if settings.showcons:
+                for x in xs:
+                    print('singletons', x)
+            bkcons.extend(xs)
 
-        xs = deduce_non_singletons(settings)
-        if settings.showcons:
-            for x in xs:
-                print('singletons', x)
-        bkcons.extend(xs)
+        if settings.is_bkcons_enabled(BkConsConstraint.TYPE):
+            type_cons = tuple(deduce_type_cons(settings))
+            if settings.showcons:
+                for x in type_cons:
+                    print('type_con', x)
+            bkcons.extend(type_cons)
 
+        include_binary = settings.is_bkcons_enabled(BkConsConstraint.BINARY)
+        include_ternary = settings.is_bkcons_enabled(BkConsConstraint.TERNARY)
 
-        type_cons = tuple(deduce_type_cons(settings))
-        if settings.showcons:
-            for x in type_cons:
-                print('type_con', x)
-        bkcons.extend(type_cons)
+        if include_binary or include_ternary:
+            import signal
 
+            def handler(signum, frame):
+                raise TimeoutError()
 
-    if not settings.datalog:
-        settings.logger.debug(f'Loading recalls FAILURE')
+            settings.logger.debug('Loading bkcons')
+            xs = []
+            with settings.stats.duration('bkcons'):
+                signal.signal(signal.SIGALRM, handler)
+                signal.alarm(settings.bkcons_timeout)
+                try:
+                    xs = deduce_bk_cons(settings, tester, include_binary=include_binary, include_ternary=include_ternary)
+                except TimeoutError as _exc:
+                    settings.logger.debug('Loading bkcons FAILURE')
+                finally:
+                    signal.alarm(0)
+            if settings.showcons:
+                for x in sorted(xs):
+                    print('BKCON', x)
+            bkcons.extend(xs)
     else:
-        import signal
-
-        def handler(signum, frame):
-            raise TimeoutError()
-
-        settings.logger.debug(f'Loading bkcons')
-        xs = []
-        with settings.stats.duration('bkcons'):
-            signal.signal(signal.SIGALRM, handler)
-            signal.alarm(settings.bkcons_timeout)
-            try:
-                xs = deduce_bk_cons(settings, tester)
-            except TimeoutError as _exc:
-                settings.logger.debug(f'Loading bkcons FAILURE')
-            finally:
-                signal.alarm(0)
-        if settings.showcons:
-            for x in sorted(xs):
-                print('BKCON', x)
-        bkcons.extend(xs)
+        if recall_enabled and not recall_success and datalog_requested:
+            # failure already logged above; keep message for context when other families requested
+            pass
+        elif datalog_requested and settings.logger.isEnabledFor(logging.DEBUG):
+            settings.logger.debug('Skipping datalog background constraints because recall constraints were disabled or unavailable')
     return bkcons
 
 def learn_solution(settings):
