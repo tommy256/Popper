@@ -182,6 +182,7 @@ def parse_args():
     parser.add_argument('--anytime-timeout', type=int, default=ANYTIME_TIMEOUT, help=f'Maximum timeout (seconds) for each anytime MaxSAT call (default: {ANYTIME_TIMEOUT})')
     parser.add_argument('--batch-size', type=int, default=BATCH_SIZE, help=f'Combine batch size (default: {BATCH_SIZE})')
     parser.add_argument('--functional-test', default=False, action='store_true', help='Run functional test')
+    parser.add_argument('--no-pointless', default=False, action='store_true', help='Disable removal of pointless relations determined from the background knowledge')
     parser.add_argument('--disable-symmetry-breaking', default=False, action='store_true', help='Disable symmetry-breaking ordering constraints in the hypothesis generator')
     parser.add_argument('--constraints', nargs='+', default=None, help='Constraint strategies to enable (default: all). Use "none" to disable every constraint. Available: generalisation, specialisation, unsat, redundancy1, redundancy2, tmp_andy, banish')
     parser.add_argument('--bkcons', nargs='+', default=None, help='Background constraint families to enable (default: all). Use "none" to disable every background constraint. Available: recall, non_singleton, type, binary, ternary')
@@ -353,7 +354,7 @@ def flatten(xs):
     return [item for sublist in xs for item in sublist]
 
 class Settings:
-    def __init__(self, cmd_line=False, info=True, debug=False, show_stats=True, max_literals=MAX_LITERALS, timeout=TIMEOUT, quiet=False, eval_timeout=EVAL_TIMEOUT, max_examples=MAX_EXAMPLES, max_body=None, max_rules=None, max_vars=None, functional_test=False, kbpath=False, ex_file=False, bk_file=False, bias_file=False, showcons=False, no_bias=False, order_space=False, noisy=False, batch_size=BATCH_SIZE, solver='rc2', anytime_solver=None, anytime_timeout=ANYTIME_TIMEOUT, enabled_constraints=None, enabled_bkcons=None, symmetry_breaking=True):
+    def __init__(self, cmd_line=False, info=True, debug=False, show_stats=True, max_literals=MAX_LITERALS, timeout=TIMEOUT, quiet=False, eval_timeout=EVAL_TIMEOUT, max_examples=MAX_EXAMPLES, max_body=None, max_rules=None, max_vars=None, functional_test=False, kbpath=False, ex_file=False, bk_file=False, bias_file=False, showcons=False, no_bias=False, order_space=False, noisy=False, batch_size=BATCH_SIZE, solver='rc2', anytime_solver=None, anytime_timeout=ANYTIME_TIMEOUT, enabled_constraints=None, enabled_bkcons=None, symmetry_breaking=True, drop_pointless_relations=True):
 
         if cmd_line:
             args = parse_args()
@@ -383,6 +384,7 @@ class Settings:
             constraint_selection = args.constraints
             bkcons_selection = args.bkcons
             symmetry_breaking = not args.disable_symmetry_breaking
+            drop_pointless_relations = not args.no_pointless
         else:
             if kbpath:
                 self.bk_file, self.ex_file, self.bias_file = load_kbpath(kbpath)
@@ -392,6 +394,8 @@ class Settings:
                 self.bias_file = bias_file
             constraint_selection = enabled_constraints
             bkcons_selection = enabled_bkcons
+            if drop_pointless_relations is None:
+                drop_pointless_relations = True
             # symmetry_breaking parameter already holds desired value
 
         # self.tmp_cache = set()
@@ -447,6 +451,7 @@ class Settings:
         self.anytime_solver = anytime_solver
         self.anytime_timeout = anytime_timeout
         self.bkcons_timeout = BKCONS_TIMEOUT
+        self.drop_pointless_relations = drop_pointless_relations
 
         try:
             self.enabled_constraints = normalize_constraint_selection(constraint_selection)

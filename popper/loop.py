@@ -1564,13 +1564,16 @@ def popper(settings, tester, bkcons):
 def get_bk_cons(settings, tester):
     bkcons = []
 
-    with settings.stats.duration('find_pointless_relations'):
-        pointless = settings.pointless = tester.find_pointless_relations()
+    if settings.drop_pointless_relations:
+        with settings.stats.duration('find_pointless_relations'):
+            pointless = settings.pointless = tester.find_pointless_relations()
 
-    for p,a in pointless:
-        if settings.showcons:
-            print('remove pointless relation', p, a)
-        settings.body_preds.remove((p,a))
+        for p, a in pointless:
+            if settings.showcons:
+                print('remove pointless relation', p, a)
+            settings.body_preds.remove((p, a))
+    else:
+        settings.pointless = set()
 
     recall_enabled = settings.is_bkcons_enabled(BkConsConstraint.RECALL)
     datalog_families = (
