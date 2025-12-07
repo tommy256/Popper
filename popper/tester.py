@@ -53,6 +53,7 @@ class Tester():
                 try:
                     neg_recalls = deduce_neg_example_recalls(settings, atoms)
                     settings.recall = settings.recall | neg_recalls
+                    settings.bkcons_counts[BkConsConstraint.RECALL_NEG] += len(neg_recalls)
                 except Exception as err:
                     print(err)
                     settings.logger.error(f'Error computing negative example recalls: {err}')

@@ -78,6 +78,7 @@ class Popper():
     def _add_constraint(self, accumulator, constraint):
         if self.settings.is_constraint_enabled(constraint[0]):
             accumulator.append(constraint)
+            self.settings.constraint_counts[constraint[0]] += 1
             return True
         return False
 
@@ -86,6 +87,7 @@ class Popper():
         for constraint in constraints:
             if self.settings.is_constraint_enabled(constraint[0]):
                 accumulator.append(constraint)
+                self.settings.constraint_counts[constraint[0]] += 1
                 added = True
         return added
 
@@ -1601,6 +1603,7 @@ def get_bk_cons(settings, tester):
                 for x in recalls:
                     print('recall', x)
             bkcons.extend(recalls)
+            settings.bkcons_counts[BkConsConstraint.RECALL] += len(recalls)
     elif datalog_requested and settings.logger.isEnabledFor(logging.DEBUG):
         settings.logger.debug('Recalls disabled by selection; skipping recall constraints')
 
@@ -1611,6 +1614,7 @@ def get_bk_cons(settings, tester):
                 for x in xs:
                     print('singletons', x)
             bkcons.extend(xs)
+            settings.bkcons_counts[BkConsConstraint.NON_SINGLETON] += len(xs)
 
         if settings.is_bkcons_enabled(BkConsConstraint.TYPE):
             type_cons = tuple(deduce_type_cons(settings))
@@ -1618,6 +1622,7 @@ def get_bk_cons(settings, tester):
                 for x in type_cons:
                     print('type_con', x)
             bkcons.extend(type_cons)
+            settings.bkcons_counts[BkConsConstraint.TYPE] += len(type_cons)
 
         include_binary = settings.is_bkcons_enabled(BkConsConstraint.BINARY)
         include_ternary = settings.is_bkcons_enabled(BkConsConstraint.TERNARY)

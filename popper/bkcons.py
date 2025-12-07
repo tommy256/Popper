@@ -4,7 +4,7 @@ import numbers
 import operator
 import pkg_resources
 import time
-from . util import rule_is_recursive, format_rule, Constraint, order_prog, Literal, suppress_stdout_stderr
+from . util import rule_is_recursive, format_rule, Constraint, order_prog, Literal, suppress_stdout_stderr, BkConsConstraint
 from clingo import Function, Number, Tuple_
 from collections import defaultdict
 from itertools import permutations, product
@@ -699,8 +699,10 @@ def deduce_bk_cons(settings, tester, *, include_binary=True, include_ternary=Tru
     new_cons = []
     if include_binary:
         new_cons.extend(new_cons1)
+        settings.bkcons_counts[BkConsConstraint.BINARY] += len(new_cons1)
     if include_ternary:
         new_cons.extend(new_cons2)
+        settings.bkcons_counts[BkConsConstraint.TERNARY] += len(new_cons2)
 
     # print('\n'.join(new_cons))
 

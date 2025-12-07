@@ -5,7 +5,7 @@ import argparse
 import os
 import logging
 from itertools import permutations, chain, combinations
-from collections import defaultdict
+from collections import defaultdict, Counter
 from typing import NamedTuple
 from time import perf_counter
 from contextlib import contextmanager
@@ -434,6 +434,8 @@ class Settings:
         self.stats.logger = self.logger
         self.show_stats = show_stats
         self.showcons = showcons
+        self.constraint_counts = Counter()
+        self.bkcons_counts = Counter()
         self.max_literals = max_literals
         self.functional_test = functional_test
         self.timeout = timeout
