@@ -48,6 +48,7 @@ class BkConsConstraint:
     TYPE = 3
     BINARY = 4
     TERNARY = 5
+    RECALL_NEG = 6
 
 
 CONSTRAINT_ID_TO_NAME = {
@@ -82,6 +83,7 @@ BKCONS_ID_TO_NAME = {
     BkConsConstraint.TYPE: 'type',
     BkConsConstraint.BINARY: 'binary',
     BkConsConstraint.TERNARY: 'ternary',
+    BkConsConstraint.RECALL_NEG: 'recall_neg',
 }
 
 BKCONS_NAME_TO_ID = {
@@ -94,6 +96,8 @@ BKCONS_NAME_TO_ID = {
     'pairwise': BkConsConstraint.BINARY,
     'ternary': BkConsConstraint.TERNARY,
     'triple': BkConsConstraint.TERNARY,
+    'recall_neg': BkConsConstraint.RECALL_NEG,
+    'recall-neg': BkConsConstraint.RECALL_NEG,
 }
 
 
@@ -185,7 +189,7 @@ def parse_args():
     parser.add_argument('--no-pointless', default=False, action='store_true', help='Disable removal of pointless relations determined from the background knowledge')
     parser.add_argument('--disable-symmetry-breaking', default=False, action='store_true', help='Disable symmetry-breaking ordering constraints in the hypothesis generator')
     parser.add_argument('--constraints', nargs='+', default=None, help='Constraint strategies to enable (default: all). Use "none" to disable every constraint. Available: generalisation, specialisation, unsat, redundancy1, redundancy2, tmp_andy, banish')
-    parser.add_argument('--bkcons', nargs='+', default=None, help='Background constraint families to enable (default: all). Use "none" to disable every background constraint. Available: recall, non_singleton, type, binary, ternary')
+    parser.add_argument('--bkcons', nargs='+', default=None, help='Background constraint families to enable (default: all). Use "none" to disable every background constraint. Available: recall, non_singleton, type, binary, ternary, recall_neg')
     # parser.add_argument('--datalog', default=False, action='store_true', help='EXPERIMENTAL FEATURE: use recall to order literals in rules')
     # parser.add_argument('--no-bias', default=False, action='store_true', help='EXPERIMENTAL FEATURE: do not use language bias')
     # parser.add_argument('--order-space', default=False, action='store_true', help='EXPERIMENTAL FEATURE: search space ordered by size')
@@ -781,7 +785,8 @@ class Settings:
 
     def tmp_score_(self, seen_vars, literal):
         pred, args = literal
-        return self.recall[pred, tuple(1 if x in seen_vars else 0 for x in args)]
+        key = (pred, tuple(1 if x in seen_vars else 0 for x in args))
+        return self.recall.get(key, self.max_examples)
 
 # def non_empty_powerset(iterable):
 #     s = tuple(iterable)

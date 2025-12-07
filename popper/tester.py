@@ -1,10 +1,11 @@
 import os
 import time
+import logging
 import pkg_resources
 from janus_swi import query_once, consult
 from functools import cache
 from contextlib import contextmanager
-from . util import order_prog, prog_is_recursive, rule_is_recursive, calc_rule_size, calc_prog_size, prog_hash, format_rule, format_literal, Literal
+from . util import order_prog, prog_is_recursive, rule_is_recursive, calc_rule_size, calc_prog_size, prog_hash, format_rule, format_literal, Literal, BkConsConstraint
 from bitarray import bitarray, frozenbitarray
 from bitarray.util import ones
 from collections import defaultdict
@@ -48,10 +49,15 @@ class Tester():
             atoms.append(x)
 
         if atoms:
-            try:
-                settings.recall = settings.recall | deduce_neg_example_recalls(settings, atoms)
-            except Exception as e:
-                print(e)
+            if settings.is_bkcons_enabled(BkConsConstraint.RECALL_NEG):
+                try:
+                    neg_recalls = deduce_neg_example_recalls(settings, atoms)
+                    settings.recall = settings.recall | neg_recalls
+                except Exception as err:
+                    print(err)
+                    settings.logger.error(f'Error computing negative example recalls: {err}')
+            elif settings.logger.isEnabledFor(logging.DEBUG):
+                settings.logger.debug('Negative recall constraints disabled; skipping negative example recall deduction')
 
         self.num_pos = query_once('findall(_K, pos_index(_K, _Atom), _S), length(_S, N)')['N']
         self.num_neg = query_once('findall(_K, neg_index(_K, _Atom), _S), length(_S, N)')['N']
