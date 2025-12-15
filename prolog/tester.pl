@@ -66,7 +66,7 @@ truthy(0, false) :- !.
 truthy(Value, true) :- Value \= false.
 
 ensure_test_loaded :-
-    absolute_file_name('popper/test.pl', File, [file_type(regular)]),
+    absolute_file_name('prolog/test.pl', File, [file_type(regular)]),
     user:ensure_loaded(File).
 
 reset_example_facts :-

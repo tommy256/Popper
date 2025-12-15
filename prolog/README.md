@@ -12,7 +12,7 @@ The Prolog rewrite mirrors the original Python Popper pipeline:
 4. **Tester** (`tester.pl`) asserts the ordered program into SWI-Prolog, evaluates it against the background knowledge and examples, and reports the outcome (`all/some/none`).
 5. **Controller** (`popper.pl`) orchestrates the above, iterating over clause-size bounds, enumerating models, and returning discovered programs.
 
-All modules are pure Prolog (SWI-Prolog 9.x recommended) and communicate via structured terms. External dependencies are limited to Clingo (>= 5.8.0) and the existing Popper ASP biases under `popper/alan/` plus example folders in `examples/`.
+All modules are pure Prolog (SWI-Prolog 9.x recommended) and communicate via structured terms. External dependencies are limited to Clingo (>= 5.8.0) and the existing Popper ASP biases under `prolog/alan/` plus example folders in `examples/`.
 
 ## 2. Repository Layout (Prolog rewrite)
 
@@ -66,10 +66,9 @@ Responsibilities:
 - `unordered_to_ordered/2` converts an unordered program into `ordered_program/2` by iteratively picking groundable literals, preferring non-recursive ones before recursive ones.
 - Throws `error(cannot_ground(Body, Grounded))` if no suitable literal is available; the controller catches this and skips the candidate.
 
-### 4.5. `tester.pl`
-- Loads the background knowledge (`bk.pl`), test harness (`popper/test.pl`), and examples (`exs.pl`), asserting them into the `user` module.
+- Loads the background knowledge (`bk.pl`), test harness (`prolog/test.pl`), and examples (`exs.pl`), asserting them into the `user` module.
 - Options:
-  - `timeout(Seconds)` (default `60`): Prolog evaluation timeout per query, passed to `popper/test.pl`.
+  - `timeout(Seconds)` (default `60`): Prolog evaluation timeout per query, passed to `prolog/test.pl`.
   - `minimal(Boolean)` (default `true`): choose between `do_test_minimal/4` or `do_test/4`.
 - Provides `tester_initialise/2`, `tester_evaluate/2`, and formatting helpers.
 - Manages assertion and retraction of candidate clauses via `setup_call_cleanup/3`.
@@ -151,7 +150,7 @@ This command runs all plunit tests defined in `tests.pl`. Ensure `clingo` is on 
 
 ### 6.2. Custom Constraints
 
-- To prune search space, modify or extend the ASP biases under `popper/alan/`. These are consumed unchanged by the Prolog rewrite.
+- To prune search space, modify or extend the ASP biases under `prolog/alan/`. These are consumed unchanged by the Prolog rewrite.
 - For Prolog-side constraints (e.g., rejecting clauses with certain predicates), add checks in `generate.pl`, `order.pl`, or `popper.pl` before programs reach the tester.
 
 ### 6.3. Alternative Backends

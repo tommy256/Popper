@@ -76,7 +76,7 @@ raise_timeout(TimeLimit) :-
     ).
 
 alan_directory(AlanDir) :-
-    absolute_file_name('popper/alan', AlanDir, [file_type(directory)]).
+    absolute_file_name('prolog/alan', AlanDir, [file_type(directory)]).
 
 process_args(AlanProgram, ModesPath, TimeLimit, Args) :-
         Base = ['--outf=2', '--quiet=0', '--models=0'],
