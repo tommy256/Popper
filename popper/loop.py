@@ -77,17 +77,16 @@ class Popper():
 
     def _add_constraint(self, accumulator, constraint):
         if self.settings.is_constraint_enabled(constraint[0]):
-            accumulator.append(constraint)
-            self.settings.constraint_counts[constraint[0]] += 1
+            with self.settings.stats.duration('constraint_addition'):
+                accumulator.append(constraint)
+                self.settings.constraint_counts[constraint[0]] += 1
             return True
         return False
 
     def _extend_constraints(self, accumulator, constraints):
         added = False
         for constraint in constraints:
-            if self.settings.is_constraint_enabled(constraint[0]):
-                accumulator.append(constraint)
-                self.settings.constraint_counts[constraint[0]] += 1
+            if self._add_constraint(accumulator, constraint):
                 added = True
         return added
 
@@ -247,139 +246,140 @@ class Popper():
                         settings.print_incomplete_solution2(prog, tp, fn, tn, fp, prog_size)
                         self._extend_constraints(new_cons, self.build_constraints_previous_hypotheses(mdl, prog_size))
 
-                # if it does not cover any example, prune specialisations
-                if tp == 0:
-                    add_spec = True
-                    # if recursion and no PI, apply redundancy constraints
-                    if settings.recursion_enabled:
-                        add_redund2 = True
-                        if len(prog) == 1 and not settings.pi_enabled:
-                            add_redund1 = True
-
-                # if consistent, prune specialisations
-                if not inconsistent and not skipped:
-                    add_spec = True
-
-                # if covers all positive examples prune generalisations
-                if tp == num_pos:
-                    add_gen = True
-
-                # if the program does not cover any positive examples, check whether it is has an unsat core
-                if not has_invention:
-                    if tp < min_coverage or (settings.noisy and tp <= prog_size):
-                        with settings.stats.duration('find mucs'):
-                            cons_ = tuple(self.explain_incomplete(prog))
-                            if self._extend_constraints(new_cons, cons_):
-                                pruned_more_general = True
-
-                if tp > 0 and success_sets and (not settings.noisy or (settings.noisy and fp==0)):
-                    with settings.stats.duration('check subsumed and covers_too_few'):
-                        subsumed = pos_covered in success_sets or any(subset(pos_covered, xs) for xs in success_sets)
-                        subsumed_by_two = not subsumed and self.check_subsumed_by_two(pos_covered, prog_size)
-                        covers_too_few = not subsumed and not subsumed_by_two and not settings.noisy and self.check_covers_too_few(prog_size, pos_covered)
-
-                    if subsumed or subsumed_by_two or covers_too_few:
+                with settings.stats.duration('constraint_decision'):
+                    # if it does not cover any example, prune specialisations
+                    if tp == 0:
                         add_spec = True
-                        noisy_subsumed = True
+                        # if recursion and no PI, apply redundancy constraints
+                        if settings.recursion_enabled:
+                            add_redund2 = True
+                            if len(prog) == 1 and not settings.pi_enabled:
+                                add_redund1 = True
 
-                if not settings.noisy and not has_invention and not is_recursive and (subsumed or subsumed_by_two or covers_too_few):
+                    # if consistent, prune specialisations
+                    if not inconsistent and not skipped:
+                        add_spec = True
 
-                    # TODO: FIND MOST GENERAL SUBSUMED RECURSIVE PROGRAM
-                    # xs = self.subsumed_or_covers_too_few2(prog, check_coverage=False, check_subsumed=True)
-                    # if xs:
-                    # pruned_more_general
-                    #     for x in xs:
-                    #         print('')
-                    #         for rule in x:
-                    #             # print(rule)
-                    #             print('\t', 'moo', format_rule(rule))
-                    #         new_cons.append((Constraint.SPECIALISATION, [functional_rename_vars(rule) for rule in x]))
-
-
-                    # If a program is subsumed or dioesn't cover enough examples, we search for the most general subprogram that also is also subsumed or doesn't cover enough examples
-                    # only applies to non-recursive and non-PI programs
-                    subsumed_progs = []
-                    with settings.stats.duration('find most general subsumed/covers_too_few'):
-                        subsumed_progs = self.subsumed_or_covers_too_few(prog, seen=set())
-                    has_subsumed = len(subsumed_progs) > 0
-
-                    if settings.showcons and not has_subsumed:
-                        if subsumed:
-                            print('\t', 'SUBSUMED:', '\t', format_prog(prog))
-                        elif subsumed_by_two:
-                            print('\t', 'SUBSUMED BY TWO:', '\t', format_prog(prog))
-                        elif covers_too_few:
-                            print('\t', 'COVERS TOO FEW:', '\t', format_prog(prog))
-                    added_subsumed = False
-                    for subsumed_prog, message in subsumed_progs:
-                        if settings.showcons:
-                            print('\t', message, '\t', format_prog(prog))
-
-                        subsumed_prog_ = frozenset(remap_variables(rule) for rule in subsumed_prog)
-                        if self._add_constraint(new_cons, (Constraint.SPECIALISATION, subsumed_prog_)):
-                            added_subsumed = True
-
-                    if added_subsumed:
-                        pruned_more_general = True
-
-                if not settings.noisy and not pruned_more_general:
-                    if inconsistent:
-                        # if inconsistent, prune generalisations
+                    # if covers all positive examples prune generalisations
+                    if tp == num_pos:
                         add_gen = True
-                        if is_recursive:
-                            combiner.add_inconsistent(prog)
-                            cons_ = frozenset(self.explain_inconsistent(prog))
-                            if self._extend_constraints(new_cons, cons_):
-                                pruned_sub_inconsistent = True
-                    else:
-                        # messy thing so the combiner can look at something
-                        neg_covered = frozenset()
 
-                    # if consistent and partially complete, test whether functional
-                    if not inconsistent and settings.functional_test and tp > 0 and not pruned_more_general:
-                        if tester.is_non_functional(prog):
-                            # if not functional, rule out generalisations and set as inconsistent
-                            add_gen = True
-                            # V.IMPORTANT: do not prune specialisations!
-                            add_spec = False
-                            inconsistent = True
+                    # if the program does not cover any positive examples, check whether it is has an unsat core
+                    if not has_invention:
+                        if tp < min_coverage or (settings.noisy and tp <= prog_size):
+                            with settings.stats.duration('find mucs'):
+                                cons_ = tuple(self.explain_incomplete(prog))
+                                if self._extend_constraints(new_cons, cons_):
+                                    pruned_more_general = True
 
-                            # check whether any subprograms are non-functional
-                            with settings.stats.duration('explain_none_functional'):
-                                cons_ = explain_none_functional(settings, tester, prog)
-                                self._extend_constraints(new_cons, cons_)
+                    if tp > 0 and success_sets and (not settings.noisy or (settings.noisy and fp==0)):
+                        with settings.stats.duration('check subsumed and covers_too_few'):
+                            subsumed = pos_covered in success_sets or any(subset(pos_covered, xs) for xs in success_sets)
+                            subsumed_by_two = not subsumed and self.check_subsumed_by_two(pos_covered, prog_size)
+                            covers_too_few = not subsumed and not subsumed_by_two and not settings.noisy and self.check_covers_too_few(prog_size, pos_covered)
 
-                if settings.noisy:
-                    # if a program of size k covers less than k positive examples, we can prune its specialisations
-                    # otherwise no useful mdl induction has taken place
-                    if tp <= prog_size:
-                        add_spec = True
-
-                    # we can prune specialisations with size greater than prog_size+fp or tp
-                    # only prune if the specialisation bounds are smaller than existing bounds
-                    if not skipped:
-                        spec_size_ = min([tp, fp + prog_size])
-                        if spec_size_ <= prog_size:
+                        if subsumed or subsumed_by_two or covers_too_few:
                             add_spec = True
-                        elif len(prog) == 1 and spec_size_ < settings.max_body + 1 and spec_size_ < settings.max_literals:
-                            spec_size = spec_size_
-                        elif len(prog) > 1 and spec_size_ < settings.max_literals:
-                            spec_size = spec_size_
+                            noisy_subsumed = True
 
-                    if skipped or skip_early_neg:
-                        # only prune if the generalisation bounds are smaller than existing bounds
-                        gen_size_ = fn + prog_size
-                        if gen_size_ <= prog_size:
+                    if not settings.noisy and not has_invention and not is_recursive and (subsumed or subsumed_by_two or covers_too_few):
+
+                        # TODO: FIND MOST GENERAL SUBSUMED RECURSIVE PROGRAM
+                        # xs = self.subsumed_or_covers_too_few2(prog, check_coverage=False, check_subsumed=True)
+                        # if xs:
+                        # pruned_more_general
+                        #     for x in xs:
+                        #         print('')
+                        #         for rule in x:
+                        #             # print(rule)
+                        #             print('\t', 'moo', format_rule(rule))
+                        #         new_cons.append((Constraint.SPECIALISATION, [functional_rename_vars(rule) for rule in x]))
+
+
+                        # If a program is subsumed or dioesn't cover enough examples, we search for the most general subprogram that also is also subsumed or doesn't cover enough examples
+                        # only applies to non-recursive and non-PI programs
+                        subsumed_progs = []
+                        with settings.stats.duration('find most general subsumed/covers_too_few'):
+                            subsumed_progs = self.subsumed_or_covers_too_few(prog, seen=set())
+                        has_subsumed = len(subsumed_progs) > 0
+
+                        if settings.showcons and not has_subsumed:
+                            if subsumed:
+                                print('\t', 'SUBSUMED:', '\t', format_prog(prog))
+                            elif subsumed_by_two:
+                                print('\t', 'SUBSUMED BY TWO:', '\t', format_prog(prog))
+                            elif covers_too_few:
+                                print('\t', 'COVERS TOO FEW:', '\t', format_prog(prog))
+                        added_subsumed = False
+                        for subsumed_prog, message in subsumed_progs:
+                            if settings.showcons:
+                                print('\t', message, '\t', format_prog(prog))
+
+                            subsumed_prog_ = frozenset(remap_variables(rule) for rule in subsumed_prog)
+                            if self._add_constraint(new_cons, (Constraint.SPECIALISATION, subsumed_prog_)):
+                                added_subsumed = True
+
+                        if added_subsumed:
+                            pruned_more_general = True
+
+                    if not settings.noisy and not pruned_more_general:
+                        if inconsistent:
+                            # if inconsistent, prune generalisations
                             add_gen = True
-                        if gen_size_ < settings.max_literals:
-                            gen_size = gen_size_
-                    else:
-                        # only prune if the generalisation bounds are smaller than existing bounds
-                        gen_size_ = min([fn + prog_size, num_pos-fp, settings.best_mdl - mdl + num_pos + prog_size])
-                        if gen_size_ <= prog_size:
-                            add_gen = True
-                        if gen_size_ < settings.max_literals:
-                            gen_size = gen_size_
+                            if is_recursive:
+                                combiner.add_inconsistent(prog)
+                                cons_ = frozenset(self.explain_inconsistent(prog))
+                                if self._extend_constraints(new_cons, cons_):
+                                    pruned_sub_inconsistent = True
+                        else:
+                            # messy thing so the combiner can look at something
+                            neg_covered = frozenset()
+
+                        # if consistent and partially complete, test whether functional
+                        if not inconsistent and settings.functional_test and tp > 0 and not pruned_more_general:
+                            if tester.is_non_functional(prog):
+                                # if not functional, rule out generalisations and set as inconsistent
+                                add_gen = True
+                                # V.IMPORTANT: do not prune specialisations!
+                                add_spec = False
+                                inconsistent = True
+
+                                # check whether any subprograms are non-functional
+                                with settings.stats.duration('explain_none_functional'):
+                                    cons_ = explain_none_functional(settings, tester, prog)
+                                    self._extend_constraints(new_cons, cons_)
+
+                    if settings.noisy:
+                        # if a program of size k covers less than k positive examples, we can prune its specialisations
+                        # otherwise no useful mdl induction has taken place
+                        if tp <= prog_size:
+                            add_spec = True
+
+                        # we can prune specialisations with size greater than prog_size+fp or tp
+                        # only prune if the specialisation bounds are smaller than existing bounds
+                        if not skipped:
+                            spec_size_ = min([tp, fp + prog_size])
+                            if spec_size_ <= prog_size:
+                                add_spec = True
+                            elif len(prog) == 1 and spec_size_ < settings.max_body + 1 and spec_size_ < settings.max_literals:
+                                spec_size = spec_size_
+                            elif len(prog) > 1 and spec_size_ < settings.max_literals:
+                                spec_size = spec_size_
+
+                        if skipped or skip_early_neg:
+                            # only prune if the generalisation bounds are smaller than existing bounds
+                            gen_size_ = fn + prog_size
+                            if gen_size_ <= prog_size:
+                                add_gen = True
+                            if gen_size_ < settings.max_literals:
+                                gen_size = gen_size_
+                        else:
+                            # only prune if the generalisation bounds are smaller than existing bounds
+                            gen_size_ = min([fn + prog_size, num_pos-fp, settings.best_mdl - mdl + num_pos + prog_size])
+                            if gen_size_ <= prog_size:
+                                add_gen = True
+                            if gen_size_ < settings.max_literals:
+                                gen_size = gen_size_
 
                 # remove generalisations of programs with redundant literals
                 if is_recursive:
