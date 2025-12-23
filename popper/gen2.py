@@ -214,7 +214,7 @@ class Generator:
                     con_size = xs[2]
                 ground_rules2 = tuple(self.build_specialisation_constraint3(con_prog, con_size))
                 new_ground_cons.update(ground_rules2)
-            elif con_type == Constraint.UNSAT:
+            elif con_type in (Constraint.UNSAT, Constraint.UNSAT_CORE, Constraint.REDUCIBLE_1):
                 cons_ = self.unsat_constraint2(con_prog)
                 new_ground_cons.update(cons_)
 

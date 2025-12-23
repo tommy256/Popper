@@ -569,7 +569,7 @@ class Generator:
                 new_rule_handles2, con = self.build_specialisation_constraint2(con_prog, spec_size=con_size)
                 self.all_handles.update(new_rule_handles2)
                 new_cons.add(con)
-            elif con_type == Constraint.UNSAT:
+            elif con_type in (Constraint.UNSAT, Constraint.UNSAT_CORE, Constraint.REDUCIBLE_1):
                 cons_ = self.unsat_constraint2(con_prog)
                 self.new_ground_cons.update(cons_)
             elif con_type == Constraint.REDUNDANCY_CONSTRAINT1:

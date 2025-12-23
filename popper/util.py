@@ -16,7 +16,7 @@ class Literal(NamedTuple):
 
 clingo.script.enable_python()
 
-TIMEOUT=1200
+TIMEOUT=300
 EVAL_TIMEOUT=0.001
 MAX_LITERALS=40
 MAX_SOLUTIONS=1
@@ -35,11 +35,18 @@ savings=0
 class Constraint:
     GENERALISATION = 1
     SPECIALISATION = 2
-    UNSAT = 3
+    # Split of historical "unsat":
+    # - UNSAT_CORE: unsat-core pruning derived from incomplete programs.
+    # - REDUCIBLE_1: redundant-literal (implication-reducible) pruning.
+    # For backward compatibility, UNSAT is kept as an umbrella flag that enables
+    # both families via Settings.is_constraint_enabled().
+    UNSAT_CORE = 3
     REDUNDANCY_CONSTRAINT1 = 4
     REDUNDANCY_CONSTRAINT2 = 5
     TMP_ANDY = 6
     BANISH = 7
+    REDUCIBLE_1 = 8
+    UNSAT = 9
 
 
 class BkConsConstraint:
@@ -55,10 +62,12 @@ CONSTRAINT_ID_TO_NAME = {
     Constraint.GENERALISATION: 'generalisation',
     Constraint.SPECIALISATION: 'specialisation',
     Constraint.UNSAT: 'unsat',
+    Constraint.UNSAT_CORE: 'unsat_core',
     Constraint.REDUNDANCY_CONSTRAINT1: 'redundancy1',
     Constraint.REDUNDANCY_CONSTRAINT2: 'redundancy2',
     Constraint.TMP_ANDY: 'tmp_andy',
     Constraint.BANISH: 'banish',
+    Constraint.REDUCIBLE_1: 'reducible1',
 }
 
 CONSTRAINT_NAME_TO_ID = {
@@ -67,6 +76,12 @@ CONSTRAINT_NAME_TO_ID = {
     'specialisation': Constraint.SPECIALISATION,
     'specialization': Constraint.SPECIALISATION,
     'unsat': Constraint.UNSAT,
+    'unsat_core': Constraint.UNSAT_CORE,
+    'unsat-core': Constraint.UNSAT_CORE,
+    'reducible1': Constraint.REDUCIBLE_1,
+    'reducible_1': Constraint.REDUCIBLE_1,
+    'redundant_literal': Constraint.REDUCIBLE_1,
+    'redundant-literal': Constraint.REDUCIBLE_1,
     'redundancy1': Constraint.REDUNDANCY_CONSTRAINT1,
     'redundancy_constraint1': Constraint.REDUNDANCY_CONSTRAINT1,
     'redundancy2': Constraint.REDUNDANCY_CONSTRAINT2,
@@ -159,6 +174,19 @@ def _normalize_named_selection(selection, id_to_name, name_to_id, *, entity_name
 
 
 def normalize_constraint_selection(selection):
+    # Default behaviour: keep legacy "unsat" enabled (umbrella) and avoid
+    # redundantly enabling the split sub-families by default.
+    if selection is None:
+        return {
+            Constraint.GENERALISATION,
+            Constraint.SPECIALISATION,
+            Constraint.UNSAT,
+            Constraint.REDUNDANCY_CONSTRAINT1,
+            Constraint.REDUNDANCY_CONSTRAINT2,
+            Constraint.TMP_ANDY,
+            Constraint.BANISH,
+        }
+
     return _normalize_named_selection(selection, CONSTRAINT_ID_TO_NAME, CONSTRAINT_NAME_TO_ID, entity_name='constraint')
 
 
@@ -188,7 +216,7 @@ def parse_args():
     parser.add_argument('--functional-test', default=False, action='store_true', help='Run functional test')
     parser.add_argument('--no-pointless', default=False, action='store_true', help='Disable removal of pointless relations determined from the background knowledge')
     parser.add_argument('--disable-symmetry-breaking', default=False, action='store_true', help='Disable symmetry-breaking ordering constraints in the hypothesis generator')
-    parser.add_argument('--constraints', nargs='+', default=None, help='Constraint strategies to enable (default: all). Use "none" to disable every constraint. Available: generalisation, specialisation, unsat, redundancy1, redundancy2, tmp_andy, banish')
+    parser.add_argument('--constraints', nargs='+', default=None, help='Constraint strategies to enable (default: legacy all). Use "none" to disable every constraint. Available: generalisation, specialisation, unsat (umbrella: enables unsat_core+reducible1), unsat_core, reducible1, redundancy1, redundancy2, tmp_andy, banish')
     parser.add_argument('--bkcons', nargs='+', default=None, help='Background constraint families to enable (default: all). Use "none" to disable every background constraint. Available: recall, non_singleton, type, binary, ternary, recall_neg')
     # parser.add_argument('--datalog', default=False, action='store_true', help='EXPERIMENTAL FEATURE: use recall to order literals in rules')
     # parser.add_argument('--no-bias', default=False, action='store_true', help='EXPERIMENTAL FEATURE: do not use language bias')
@@ -672,7 +700,12 @@ class Settings:
         self.logger.info('*'*20)
 
     def is_constraint_enabled(self, constraint_type):
-        return constraint_type in self.enabled_constraints
+        if constraint_type in self.enabled_constraints:
+            return True
+        # Legacy umbrella: enabling "unsat" should enable both split families.
+        if Constraint.UNSAT in self.enabled_constraints and constraint_type in (Constraint.UNSAT_CORE, Constraint.REDUCIBLE_1):
+            return True
+        return False
 
     def is_bkcons_enabled(self, constraint_type):
         return constraint_type in self.enabled_bkcons

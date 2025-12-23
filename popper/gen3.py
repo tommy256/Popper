@@ -314,7 +314,7 @@ class Generator:
                     con_size = xs[2]
                 xs = set(self.build_specialisation_constraint3(con_prog, con_size))
                 new_cons.update(xs)
-            elif con_type == Constraint.UNSAT:
+            elif con_type in (Constraint.UNSAT, Constraint.UNSAT_CORE, Constraint.REDUCIBLE_1):
                 new_cons.update(self.unsat_constraint2(con_prog))
             elif con_type == Constraint.REDUNDANCY_CONSTRAINT1:
                 xs = set(self.redundancy_constraint1(con_prog))

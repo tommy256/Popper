@@ -406,16 +406,17 @@ class Popper():
                 #             print('\t','r2',format_rule(order_rule(r2)))
                 #         new_cons.append((Constraint.GENERALISATION, [r1,r2], None, None))
 
-                with settings.stats.duration('check_reducible1'):
-                    xs, pruned_smaller = self.check_redundant_literal(prog)
-                    if pruned_smaller:
-                        pruned_more_general = True
-                    if xs:
-                        add_spec = True
-                        for x in xs:
-                            if settings.showcons:
-                                print('\t', 'REDUCIBLE_1:', '\t', ','.join(format_literal(literal) for literal in x))
-                            self._add_constraint(new_cons, (Constraint.UNSAT, x))
+                if settings.is_constraint_enabled(Constraint.REDUCIBLE_1):
+                    with settings.stats.duration('check_reducible1'):
+                        xs, pruned_smaller = self.check_redundant_literal(prog)
+                        if pruned_smaller:
+                            pruned_more_general = True
+                        if xs:
+                            add_spec = True
+                            for x in xs:
+                                if settings.showcons:
+                                    print('\t', 'REDUCIBLE_1:', '\t', ','.join(format_literal(literal) for literal in x))
+                                self._add_constraint(new_cons, (Constraint.REDUCIBLE_1, x))
 
                 # CHECK WHETHER THE PROGRAM DOES NOT DISCRIMINATE AGAINST NEGATIVE EXAMPLES
                 # this paper outlines the idea: # https://arxiv.org/pdf/2502.01232
@@ -1086,7 +1087,7 @@ class Popper():
         # print(format_prog(prog))
 
         settings, tester = self.settings, self.tester
-        if not any(settings.is_constraint_enabled(ct) for ct in (Constraint.UNSAT, Constraint.SPECIALISATION, Constraint.REDUNDANCY_CONSTRAINT1, Constraint.REDUNDANCY_CONSTRAINT2)):
+        if not any(settings.is_constraint_enabled(ct) for ct in (Constraint.UNSAT_CORE, Constraint.SPECIALISATION, Constraint.REDUNDANCY_CONSTRAINT1, Constraint.REDUNDANCY_CONSTRAINT2)):
             return
         unsat_cores = self.explain_totally_incomplete(prog)
 
@@ -1101,7 +1102,7 @@ class Popper():
 
             if unsat_body:
                 _, body = list(subprog)[0]
-                yield (Constraint.UNSAT, body)
+                yield (Constraint.UNSAT_CORE, body)
                 continue
 
             if not (settings.recursion_enabled or settings.pi_enabled):
