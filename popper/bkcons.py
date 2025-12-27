@@ -4,6 +4,7 @@ import numbers
 import operator
 import pkg_resources
 import time
+import sys
 from . util import rule_is_recursive, format_rule, Constraint, order_prog, Literal, suppress_stdout_stderr, BkConsConstraint
 from clingo import Function, Number, Tuple_
 from collections import defaultdict
@@ -768,7 +769,8 @@ def deduce_recalls(settings):
             solver.add('base', [], bk)
             solver.ground([('base', [])])
     except Exception as Err:
-        print('WARNING: cannot deduce recalls', Err)
+        # print('WARNING: cannot deduce recalls', Err)  <-- 元のコード
+        sys.stderr.write(f'WARNING: cannot deduce recalls {Err}\n') # <-- 修正後
         return None
 
     for pred, arity in settings.body_preds:

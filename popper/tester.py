@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import logging
 import pkg_resources
@@ -429,7 +430,7 @@ class Tester():
                     # print(p, pa)
                     missing.add(p)
             except Exception as Err:
-                print(f"Error in find_pointless_relations: {Err}")
+                sys.stderr.write(f"Error in find_pointless_relations: {Err}\n")
                 settings.logger.error(f"Error in find_pointless_relations: {Err}")
                 return pointless
 
@@ -459,7 +460,7 @@ class Tester():
                     if query_once(query1)['truth'] or query_once(query2)['truth']:
                         continue
                 except Exception as Err:
-                    print('ERROR detecting pointless relations', Err)
+                    sys.stderr.write(f'ERROR detecting pointless relations {Err}\n')
                     return pointless
 
                 a, b = (p,pa), (q,qa)
