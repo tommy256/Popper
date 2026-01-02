@@ -278,6 +278,7 @@ class Stats:
         self.exec_start = perf_counter()
         self.total_programs = 0
         self.durations = {}
+        self.constraint_type_durations = {}
 
     def total_exec_time(self):
         return perf_counter() - self.exec_start
@@ -320,6 +321,13 @@ class Stats:
                 self.durations[operation] = [duration]
             else:
                 self.durations[operation].append(duration)
+            
+            # Track constraint-specific timings separately for detailed analysis
+            if operation.startswith('constraint_compute_'):
+                if operation not in self.constraint_type_durations:
+                    self.constraint_type_durations[operation] = [duration]
+                else:
+                    self.constraint_type_durations[operation].append(duration)
 
 
 # def format_prog2(prog):

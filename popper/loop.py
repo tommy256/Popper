@@ -4,7 +4,7 @@ from collections import defaultdict
 from bitarray.util import subset, any_and, ones
 from functools import cache
 from itertools import chain, combinations, permutations
-from . util import timeout, format_rule, rule_is_recursive, prog_is_recursive, prog_has_invention, calc_prog_size, format_literal, Constraint, BkConsConstraint, mdl_score, suppress_stdout_stderr, get_raw_prog, Literal, remap_variables, format_prog
+from . util import timeout, format_rule, rule_is_recursive, prog_is_recursive, prog_has_invention, calc_prog_size, format_literal, Constraint, BkConsConstraint, mdl_score, suppress_stdout_stderr, get_raw_prog, Literal, remap_variables, format_prog, constraint_type_to_name
 from . tester import Tester
 from . bkcons import deduce_bk_cons, deduce_recalls, deduce_type_cons, deduce_non_singletons
 from . combine import Combiner
@@ -77,9 +77,9 @@ class Popper():
 
     def _add_constraint(self, accumulator, constraint):
         if self.settings.is_constraint_enabled(constraint[0]):
-            with self.settings.stats.duration('constraint_addition'):
-                accumulator.append(constraint)
-                self.settings.constraint_counts[constraint[0]] += 1
+            constraint_type = constraint[0]
+            accumulator.append(constraint)
+            self.settings.constraint_counts[constraint_type] += 1
             return True
         return False
 
@@ -268,9 +268,10 @@ class Popper():
                     if not has_invention:
                         if tp < min_coverage or (settings.noisy and tp <= prog_size):
                             with settings.stats.duration('find mucs'):
-                                cons_ = tuple(self.explain_incomplete(prog))
-                                if self._extend_constraints(new_cons, cons_):
-                                    pruned_more_general = True
+                                with settings.stats.duration('constraint_compute_unsat_core'):
+                                    cons_ = tuple(self.explain_incomplete(prog))
+                                    if self._extend_constraints(new_cons, cons_):
+                                        pruned_more_general = True
 
                     if tp > 0 and success_sets and (not settings.noisy or (settings.noisy and fp==0)):
                         with settings.stats.duration('check subsumed and covers_too_few'):
@@ -408,27 +409,29 @@ class Popper():
 
                 if settings.is_constraint_enabled(Constraint.REDUCIBLE_1):
                     with settings.stats.duration('check_reducible1'):
-                        xs, pruned_smaller = self.check_redundant_literal(prog)
-                        if pruned_smaller:
-                            pruned_more_general = True
-                        if xs:
-                            add_spec = True
-                            for x in xs:
-                                if settings.showcons:
-                                    print('\t', 'REDUCIBLE_1:', '\t', ','.join(format_literal(literal) for literal in x))
-                                self._add_constraint(new_cons, (Constraint.REDUCIBLE_1, x))
+                        with settings.stats.duration('constraint_compute_reducible1'):
+                            xs, pruned_smaller = self.check_redundant_literal(prog)
+                            if pruned_smaller:
+                                pruned_more_general = True
+                            if xs:
+                                add_spec = True
+                                for x in xs:
+                                    if settings.showcons:
+                                        print('\t', 'REDUCIBLE_1:', '\t', ','.join(format_literal(literal) for literal in x))
+                                    self._add_constraint(new_cons, (Constraint.REDUCIBLE_1, x))
 
                 # CHECK WHETHER THE PROGRAM DOES NOT DISCRIMINATE AGAINST NEGATIVE EXAMPLES
                 # this paper outlines the idea: # https://arxiv.org/pdf/2502.01232
                 if not add_spec and not pruned_more_general and settings.datalog and not settings.recursion_enabled and num_neg > 0:
                     with settings.stats.duration('check_reducible2'):
-                        bad_prog = self.check_neg_reducible(prog)
-                        if bad_prog:
-                            add_spec = True
-                            pruned_more_general = True
-                            if settings.showcons:
-                                print('\t', 'REDUCIBLE_2:', '\t', format_prog(bad_prog))
-                            self._add_constraint(new_cons, (Constraint.SPECIALISATION, bad_prog))
+                        with settings.stats.duration('constraint_compute_reducible2'):
+                            bad_prog = self.check_neg_reducible(prog)
+                            if bad_prog:
+                                add_spec = True
+                                pruned_more_general = True
+                                if settings.showcons:
+                                    print('\t', 'REDUCIBLE_2:', '\t', format_prog(bad_prog))
+                                self._add_constraint(new_cons, (Constraint.SPECIALISATION, bad_prog))
 
                 # must cover minimum number of examples
                 if not add_spec and not pruned_more_general:
@@ -690,32 +693,39 @@ class Popper():
 
                 # BUILD CONSTRAINTS
                 if add_spec and not pruned_more_general and not add_redund2:
-                    self._add_constraint(new_cons, (Constraint.SPECIALISATION, prog))
+                    with settings.stats.duration('constraint_compute_specialisation'):
+                        self._add_constraint(new_cons, (Constraint.SPECIALISATION, prog))
 
                 if not skipped:
                     if settings.noisy and not add_spec and spec_size and not pruned_more_general:
                         if spec_size <= settings.max_literals and ((is_recursive or has_invention or spec_size <= settings.max_body)):
-                            if self._add_constraint(new_cons, (Constraint.SPECIALISATION, prog, spec_size)):
-                                self.seen_hyp_spec[fp+prog_size+mdl].append([prog, tp, fn, tn, fp, prog_size])
+                            with settings.stats.duration('constraint_compute_specialisation'):
+                                if self._add_constraint(new_cons, (Constraint.SPECIALISATION, prog, spec_size)):
+                                    self.seen_hyp_spec[fp+prog_size+mdl].append([prog, tp, fn, tn, fp, prog_size])
 
                 if add_gen and not pruned_sub_inconsistent:
                     if settings.noisy or settings.recursion_enabled or settings.pi_enabled:
                         if not pruned_more_general:
-                            self._add_constraint(new_cons, (Constraint.GENERALISATION, prog))
+                            with settings.stats.duration('constraint_compute_generalisation'):
+                                self._add_constraint(new_cons, (Constraint.GENERALISATION, prog))
                     else:
                         if not add_spec:
-                            self._add_constraint(new_cons, (Constraint.GENERALISATION, prog))
+                            with settings.stats.duration('constraint_compute_generalisation'):
+                                self._add_constraint(new_cons, (Constraint.GENERALISATION, prog))
 
                 if settings.noisy and not add_gen and gen_size and not pruned_sub_inconsistent:
                     if gen_size <= settings.max_literals and (settings.recursion_enabled or settings.pi_enabled) and not pruned_more_general:
-                        if self._add_constraint(new_cons, (Constraint.GENERALISATION, prog, gen_size)):
-                            self.seen_hyp_gen[fn+prog_size+mdl].append([prog, tp, fn, tn, fp, prog_size])
+                        with settings.stats.duration('constraint_compute_generalisation'):
+                            if self._add_constraint(new_cons, (Constraint.GENERALISATION, prog, gen_size)):
+                                self.seen_hyp_gen[fn+prog_size+mdl].append([prog, tp, fn, tn, fp, prog_size])
 
                 if add_redund1 and not pruned_more_general:
-                    self._add_constraint(new_cons, (Constraint.REDUNDANCY_CONSTRAINT1, prog))
+                    with settings.stats.duration('constraint_compute_redundancy1'):
+                        self._add_constraint(new_cons, (Constraint.REDUNDANCY_CONSTRAINT1, prog))
 
                 if add_redund2 and not pruned_more_general:
-                    self._add_constraint(new_cons, (Constraint.REDUNDANCY_CONSTRAINT2, prog))
+                    with settings.stats.duration('constraint_compute_redundancy2'):
+                        self._add_constraint(new_cons, (Constraint.REDUNDANCY_CONSTRAINT2, prog))
 
                 if settings.noisy and not add_spec and not add_gen:
                     self._add_constraint(new_cons, (Constraint.BANISH, prog))
