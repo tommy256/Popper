@@ -217,6 +217,9 @@ class Popper():
 
                 # if non-separable program covers all examples, stop
                 if not inconsistent and tp == num_pos and not skipped:
+                    if settings.stats.first_acc1_time_sec is None:
+                        settings.stats.first_acc1_time_sec = settings.stats.total_exec_time()
+                        settings.stats.first_acc1_total_programs = settings.stats.total_programs
                     # if not settings.functional_test or not tester.is_non_functional(prog):
                     settings.solution = prog
                     settings.best_prog_score = num_pos, 0, num_neg, 0, prog_size
@@ -622,6 +625,9 @@ class Popper():
                         settings.print_incomplete_solution2(settings.solution, tp, fn, tn, fp, hypothesis_size)
 
                         if not uncovered.any():
+                            if settings.stats.first_acc1_time_sec is None and fn == 0 and fp == 0:
+                                settings.stats.first_acc1_time_sec = settings.stats.total_exec_time()
+                                settings.stats.first_acc1_total_programs = settings.stats.total_programs
                             settings.solution_found = True
                             settings.max_literals = hypothesis_size-1
                             min_coverage = settings.min_coverage = 2
@@ -663,6 +669,10 @@ class Popper():
                         # print('here???')
 
                         settings.print_incomplete_solution2(new_hypothesis, tp, fn, tn, fp, hypothesis_size)
+
+                        if settings.stats.first_acc1_time_sec is None and fn == 0 and fp == 0:
+                            settings.stats.first_acc1_time_sec = settings.stats.total_exec_time()
+                            settings.stats.first_acc1_total_programs = settings.stats.total_programs
 
                         if settings.noisy and best_score < settings.best_mdl:
                             settings.best_mdl = best_score
@@ -755,6 +765,10 @@ class Popper():
                     settings.solution = new_hypothesis
                     best_score = mdl_score(fn, fp, hypothesis_size)
                     settings.print_incomplete_solution2(new_hypothesis, tp, fn, tn, fp, hypothesis_size)
+
+                    if settings.stats.first_acc1_time_sec is None and fn == 0 and fp == 0:
+                        settings.stats.first_acc1_time_sec = settings.stats.total_exec_time()
+                        settings.stats.first_acc1_total_programs = settings.stats.total_programs
 
                     if not settings.noisy and fp == 0 and fn == 0:
                         settings.solution_found = True
@@ -1669,6 +1683,8 @@ def get_bk_cons(settings, tester):
 
 def learn_solution(settings):
     t1 = time.time()
+    # Reset stats clock to the start of this run (exclude Settings construction).
+    settings.stats.exec_start = time.perf_counter()
     settings.nonoise = not settings.noisy
     settings.solution_found = False
 

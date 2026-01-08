@@ -279,6 +279,10 @@ class Stats:
         self.total_programs = 0
         self.durations = {}
         self.constraint_type_durations = {}
+        # First time the run attains perfect accuracy (acc == 1.0).
+        # None means it never happened within the run.
+        self.first_acc1_time_sec = None
+        self.first_acc1_total_programs = None
 
     def total_exec_time(self):
         return perf_counter() - self.exec_start
