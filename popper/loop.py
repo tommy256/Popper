@@ -1687,13 +1687,18 @@ def learn_solution(settings):
     settings.stats.exec_start = time.perf_counter()
     settings.nonoise = not settings.noisy
     settings.solution_found = False
+    settings.timed_out = False
 
     with settings.stats.duration('load data'):
         tester = Tester(settings)
 
     bkcons = get_bk_cons(settings, tester)
     time_so_far = time.time()-t1
-    timeout(settings, popper, (settings, tester, bkcons), timeout_duration=int(settings.timeout-time_so_far),)
+    remaining = int(settings.timeout - time_so_far)
+    if remaining <= 0:
+        settings.timed_out = True
+        return settings.solution, settings.best_prog_score, settings.stats
+    timeout(settings, popper, (settings, tester, bkcons), timeout_duration=remaining,)
     return settings.solution, settings.best_prog_score, settings.stats
 
 def generalisations(prog, allow_headless=True, recursive=False):

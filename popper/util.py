@@ -246,20 +246,23 @@ def timeout(settings, func, args=(), kwargs={}, timeout_duration=1):
     try:
         result = func(*args, **kwargs)
     except TimeoutError as _exc:
-        settings.logger.warn(f'TIMEOUT OF {int(settings.timeout)} SECONDS EXCEEDED')
+        setattr(settings, 'timed_out', True)
+        settings.logger.warn(f'TIMEOUT OF {int(timeout_duration)} SECONDS EXCEEDED')
         return result
     except RuntimeError as moo:
         # Newer clingo versions can raise RuntimeError when a signal interrupts
         # statistics callbacks (e.g., SolveEventHandler::on_statistics).
         msg = str(moo)
         if 'SolveEventHandler::on_statistics' in msg or '_SolveEventHandler' in msg:
-            settings.logger.warn(f'TIMEOUT OF {int(settings.timeout)} SECONDS EXCEEDED')
+            setattr(settings, 'timed_out', True)
+            settings.logger.warn(f'TIMEOUT OF {int(timeout_duration)} SECONDS EXCEEDED')
             return result
         raise moo
     except AttributeError as moo:
         msg = str(moo)
         if '_SolveEventHandler' in msg or 'SolveEventHandler::on_statistics' in msg:
-            settings.logger.warn(f'TIMEOUT OF {int(settings.timeout)} SECONDS EXCEEDED')
+            setattr(settings, 'timed_out', True)
+            settings.logger.warn(f'TIMEOUT OF {int(timeout_duration)} SECONDS EXCEEDED')
             return result
         raise moo
     finally:
